@@ -47,7 +47,7 @@ aws ssm put-parameter \
 ### 3. Amazon Bedrock モデルアクセスの有効化
 
 1. AWS コンソール > Amazon Bedrock > Model access を開く
-2. **Amazon Nova Lite** (amazon.nova-lite-v1:0) のアクセスをリクエストし、有効化する
+2. **Amazon Nova 2 Lite** (amazon.nova-lite-v2:0) のアクセスをリクエストし、有効化する
 
 ### 4. GitHub Actions の設定（CI/CD）
 
@@ -178,7 +178,7 @@ resolve_s3 = true
 | サービス | 用途 | 備考 |
 |----------|------|------|
 | [Jina Reader API](https://jina.ai/reader/) | URL を Markdown に変換 | 無料枠: 1,000 万トークン、API キーなし 20 RPM |
-| Amazon Bedrock (Amazon Nova Lite) | Markdown から記事情報を構造化抽出 | AWS アカウントでモデルアクセスの有効化が必要 |
+| Amazon Bedrock (Amazon Nova 2 Lite) | Markdown から記事情報を構造化抽出 | AWS アカウントでモデルアクセスの有効化が必要 |
 
 ## コスト目安
 
