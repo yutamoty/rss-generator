@@ -1,0 +1,195 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: RSS Generator - Scrape websites and generate Atom feeds using LLM
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 30
+    MemorySize: 256
+    Environment:
+      Variables:
+        SITES_TABLE: !Ref SitesTable
+        FEED_BUCKET: !Ref FeedBucket
+
+Parameters:
+  CloudFrontDomainName:
+    Type: String
+    Default: ""
+    Description: CloudFront distribution domain name (set after first deploy)
+
+Resources:
+  # ---------- DynamoDB ----------
+  SitesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${AWS::StackName}-sites"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: site_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: site_id
+          KeyType: HASH
+
+  # ---------- S3 ----------
+  FeedBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${AWS::StackName}-feeds-${AWS::AccountId}"
+
+  FeedBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FeedBucket
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub "${FeedBucket.Arn}/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${FeedDistribution}"
+
+  # ---------- CloudFront ----------
+  FeedOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub "${AWS::StackName}-oac"
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  FeedDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub "${AWS::StackName} Atom Feed Distribution"
+        DefaultCacheBehavior:
+          TargetOriginId: FeedBucketOrigin
+          ViewerProtocolPolicy: redirect-to-https
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6  # CachingOptimized
+          DefaultTTL: 21600  # 6 hours
+        Origins:
+          - Id: FeedBucketOrigin
+            DomainName: !GetAtt FeedBucket.RegionalDomainName
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+            OriginAccessControlId: !GetAtt FeedOriginAccessControl.Id
+
+  # ---------- API Gateway ----------
+  DiscordApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+
+  # ---------- Lambda: discord-handler ----------
+  DiscordHandlerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-discord-handler"
+      CodeUri: functions/discord_handler/
+      Handler: app.lambda_handler
+      Timeout: 10
+      Environment:
+        Variables:
+          MANAGE_FUNCTION_NAME: !Ref ManageFunction
+          DISCORD_PUBLIC_KEY_PARAM: !Sub "/${AWS::StackName}/discord-public-key"
+      Policies:
+        - SSMParameterReadPolicy:
+            ParameterName: !Sub "${AWS::StackName}/discord-public-key"
+        - LambdaInvokePolicy:
+            FunctionName: !Ref ManageFunction
+      Events:
+        DiscordInteraction:
+          Type: Api
+          Properties:
+            RestApiId: !Ref DiscordApi
+            Path: /interactions
+            Method: POST
+
+  # ---------- Lambda: manage ----------
+  ManageFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-manage"
+      CodeUri: functions/manage/
+      Handler: app.lambda_handler
+      Environment:
+        Variables:
+          FEED_DISTRIBUTION_DOMAIN: !GetAtt FeedDistribution.DomainName
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SitesTable
+        - S3CrudPolicy:
+            BucketName: !Ref FeedBucket
+
+  # ---------- Lambda: get-sites ----------
+  GetSitesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-get-sites"
+      CodeUri: functions/get_sites/
+      Handler: app.lambda_handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref SitesTable
+
+  # ---------- Lambda: generate-feed ----------
+  GenerateFeedFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-generate-feed"
+      CodeUri: functions/generate_feed/
+      Handler: app.lambda_handler
+      Timeout: 120
+      MemorySize: 512
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SitesTable
+        - S3CrudPolicy:
+            BucketName: !Ref FeedBucket
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+              Resource: "arn:aws:bedrock:*::foundation-model/amazon.nova-lite-v2:0"
+
+  # ---------- Step Functions ----------
+  FeedGeneratorStateMachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Name: !Sub "${AWS::StackName}-feed-generator"
+      DefinitionUri: statemachine/definition.asl.json
+      DefinitionSubstitutions:
+        GetSitesFunctionArn: !GetAtt GetSitesFunction.Arn
+        GenerateFeedFunctionArn: !GetAtt GenerateFeedFunction.Arn
+      Policies:
+        - LambdaInvokePolicy:
+            FunctionName: !Ref GetSitesFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref GenerateFeedFunction
+      Events:
+        DailySchedule:
+          Type: Schedule
+          Properties:
+            Schedule: cron(0 0 * * ? *)
+            Description: Daily feed generation
+
+Outputs:
+  DiscordEndpoint:
+    Description: Discord Interactions Endpoint URL
+    Value: !Sub "https://${DiscordApi}.execute-api.${AWS::Region}.amazonaws.com/prod/interactions"
+  FeedDistributionDomain:
+    Description: CloudFront domain for Atom feeds
+    Value: !GetAtt FeedDistribution.DomainName
+  SitesTableName:
+    Description: DynamoDB sites table name
+    Value: !Ref SitesTable
+  FeedBucketName:
+    Description: S3 bucket for Atom feeds
+    Value: !Ref FeedBucket

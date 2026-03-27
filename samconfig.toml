@@ -1,0 +1,7 @@
+version = 0.1
+
+[default.deploy.parameters]
+stack_name = "rss-generator"
+region = "us-east-1"
+capabilities = "CAPABILITY_IAM"
+resolve_s3 = true
