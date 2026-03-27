@@ -1,0 +1,57 @@
+{
+  "Comment": "RSS Feed Generator - Get sites and generate feeds in parallel",
+  "StartAt": "GetSites",
+  "States": {
+    "GetSites": {
+      "Type": "Task",
+      "Resource": "${GetSitesFunctionArn}",
+      "ResultPath": "$.result",
+      "Next": "CheckSites"
+    },
+    "CheckSites": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.result.sites[0]",
+          "IsPresent": true,
+          "Next": "GenerateFeeds"
+        }
+      ],
+      "Default": "NoSites"
+    },
+    "NoSites": {
+      "Type": "Succeed",
+      "Comment": "No sites registered"
+    },
+    "GenerateFeeds": {
+      "Type": "Map",
+      "ItemsPath": "$.result.sites",
+      "ItemProcessor": {
+        "ProcessorConfig": {
+          "Mode": "INLINE"
+        },
+        "StartAt": "GenerateFeed",
+        "States": {
+          "GenerateFeed": {
+            "Type": "Task",
+            "Resource": "${GenerateFeedFunctionArn}",
+            "End": true,
+            "Catch": [
+              {
+                "ErrorEquals": ["States.ALL"],
+                "ResultPath": "$.error",
+                "Next": "HandleError"
+              }
+            ]
+          },
+          "HandleError": {
+            "Type": "Pass",
+            "Result": "Error occurred, skipping to next site",
+            "End": true
+          }
+        }
+      },
+      "End": true
+    }
+  }
+}
