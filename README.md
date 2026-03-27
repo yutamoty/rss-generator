@@ -208,4 +208,4 @@ sam build && sam deploy
 
 ## ライセンス
 
-Private
+[MIT License](LICENSE)
