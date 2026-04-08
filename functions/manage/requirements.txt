@@ -1,1 +1,2 @@
 python-ulid
+typing_extensions
