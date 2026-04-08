@@ -39,6 +39,12 @@ aws ssm put-parameter \
   --name "/rss-generator/discord-public-key" \
   --type SecureString \
   --value "<YOUR_DISCORD_PUBLIC_KEY>"
+
+# Jina Reader API Key (https://jina.ai/ で取得)
+aws ssm put-parameter \
+  --name "/rss-generator/jina-api-key" \
+  --type SecureString \
+  --value "<YOUR_JINA_API_KEY>"
 ```
 
 > パラメータ名は `template.yaml` 内の参照と一致させてください。
