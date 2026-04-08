@@ -34,7 +34,7 @@ def get_jina_api_key():
         _jina_api_key = response["Parameter"]["Value"]
     return _jina_api_key
 
-BEDROCK_MODEL_ID = "amazon.nova-lite-v2:0"
+BEDROCK_MODEL_ID = "us.amazon.nova-2-lite-v1:0"
 
 EXTRACTION_PROMPT = """\
 以下のMarkdownはWebページの内容です。このページから記事・ニュース・更新情報の一覧を抽出してください。
