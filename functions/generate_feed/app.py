@@ -11,8 +11,22 @@ dynamodb = boto3.resource("dynamodb")
 s3 = boto3.client("s3")
 bedrock = boto3.client("bedrock-runtime")
 
+ssm = boto3.client("ssm")
+
 table = dynamodb.Table(os.environ["SITES_TABLE"])
 feed_bucket = os.environ["FEED_BUCKET"]
+
+_jina_api_key = None
+
+
+def get_jina_api_key():
+    global _jina_api_key
+    if _jina_api_key is None:
+        response = ssm.get_parameter(
+            Name=os.environ["JINA_API_KEY_PARAM"], WithDecryption=True
+        )
+        _jina_api_key = response["Parameter"]["Value"]
+    return _jina_api_key
 
 BEDROCK_MODEL_ID = "amazon.nova-lite-v2:0"
 
@@ -75,7 +89,7 @@ def fetch_markdown(url):
         f"https://r.jina.ai/{url}",
         headers={
             "Accept": "application/json",
-            "User-Agent": "Mozilla/5.0 (compatible; RSSGenerator/1.0)",
+            "Authorization": f"Bearer {get_jina_api_key()}",
         },
     )
     with urlopen(req, timeout=30) as resp:

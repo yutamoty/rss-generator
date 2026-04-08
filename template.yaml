@@ -148,7 +148,12 @@ Resources:
       Handler: app.lambda_handler
       Timeout: 120
       MemorySize: 512
+      Environment:
+        Variables:
+          JINA_API_KEY_PARAM: !Sub "/${AWS::StackName}/jina-api-key"
       Policies:
+        - SSMParameterReadPolicy:
+            ParameterName: !Sub "${AWS::StackName}/jina-api-key"
         - DynamoDBCrudPolicy:
             TableName: !Ref SitesTable
         - S3CrudPolicy:
