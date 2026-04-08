@@ -5,7 +5,13 @@ from datetime import datetime, timezone
 from urllib.request import Request, urlopen
 from xml.etree.ElementTree import Element, SubElement, tostring
 
+import logging
+from urllib.error import HTTPError as URLHTTPError
+
 import boto3
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 dynamodb = boto3.resource("dynamodb")
 s3 = boto3.client("s3")
@@ -85,15 +91,21 @@ def lambda_handler(event, context):
 
 
 def fetch_markdown(url):
+    jina_url = f"https://r.jina.ai/{url}"
     req = Request(
-        f"https://r.jina.ai/{url}",
+        jina_url,
         headers={
             "Accept": "application/json",
             "Authorization": f"Bearer {get_jina_api_key()}",
         },
     )
-    with urlopen(req, timeout=30) as resp:
-        data = json.loads(resp.read())
+    try:
+        with urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read())
+    except URLHTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")
+        logger.error("Jina API error: status=%s url=%s body=%s", e.code, jina_url, body)
+        raise
 
     content = data.get("data", {}).get("content", "")
     title = data.get("data", {}).get("title", "")
