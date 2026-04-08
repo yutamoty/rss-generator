@@ -94,7 +94,6 @@ aws iam create-open-id-connect-provider \
 | Secret 名 | 値 |
 |------------|-----|
 | `AWS_ROLE_ARN` | 上記で作成した IAM ロールの ARN |
-| `AWS_REGION` | デプロイ先リージョン |
 
 ### 5. `samconfig.toml` の作成
 
