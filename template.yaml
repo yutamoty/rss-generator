@@ -162,7 +162,9 @@ Resources:
             - Effect: Allow
               Action:
                 - bedrock:InvokeModel
-              Resource: "arn:aws:bedrock:*:*:inference-profile/us.amazon.nova-2-lite-v1:0"
+              Resource:
+                - "arn:aws:bedrock:*:*:inference-profile/us.amazon.nova-2-lite-v1:0"
+                - "arn:aws:bedrock:*::foundation-model/amazon.nova-2-lite-v1:0"
 
   # ---------- Step Functions ----------
   FeedGeneratorStateMachine:
