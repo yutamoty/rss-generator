@@ -77,7 +77,7 @@ def lambda_handler(event, context):
         Bucket=feed_bucket,
         Key=feed_path,
         Body=atom_xml,
-        ContentType="application/atom+xml; charset=utf-8",
+        ContentType="application/xml; charset=utf-8",
     )
 
     now = datetime.now(timezone.utc).isoformat()
