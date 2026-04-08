@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 import boto3
-import ulid
+from ulid import ULID
 
 dynamodb = boto3.resource("dynamodb")
 s3 = boto3.client("s3")
@@ -45,7 +45,7 @@ def handle_add(options):
     if not name:
         name = parsed.netloc.removeprefix("www.")
 
-    site_id = str(ulid.new())
+    site_id = str(ULID())
     feed_path = f"feeds/{site_id}.xml"
     now = datetime.now(timezone.utc).isoformat()
 
