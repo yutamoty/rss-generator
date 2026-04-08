@@ -116,8 +116,8 @@ resolve_s3 = true
 ### 7. Discord Interactions Endpoint の設定
 
 1. 初回デプロイ後、CloudFormation スタックの Outputs から **API Gateway のエンドポイント URL** を取得
-2. Discord Developer Portal > アプリケーション > General Information > **Interactions Endpoint URL** に設定
-3. Discord が検証リクエストを送信し、成功すれば設定完了
+2. Discord Developer Portal > アプリケーション > General Information > **Interactions Endpoint URL** に貼り付けて **Save Changes** をクリック
+3. Discord が自動的に PING を送信し、Lambda が正しく応答すれば保存される（失敗時はエラーが表示される）
 
 ## 使い方
 
