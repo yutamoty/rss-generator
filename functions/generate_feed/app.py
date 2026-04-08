@@ -73,7 +73,10 @@ def lambda_handler(event, context):
 def fetch_markdown(url):
     req = Request(
         f"https://r.jina.ai/{url}",
-        headers={"Accept": "application/json"},
+        headers={
+            "Accept": "application/json",
+            "User-Agent": "Mozilla/5.0 (compatible; RSSGenerator/1.0)",
+        },
     )
     with urlopen(req, timeout=30) as resp:
         data = json.loads(resp.read())
