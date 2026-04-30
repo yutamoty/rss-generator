@@ -63,17 +63,10 @@ def lambda_handler(event, context):
     markdown, page_title = fetch_markdown(url)
 
     display_name = page_title or name or url
-    if page_title and page_title != name:
-        now = datetime.now(timezone.utc).isoformat()
-        table.update_item(
-            Key={"site_id": site_id},
-            UpdateExpression="SET updated_at = :u, #n = :n",
-            ExpressionAttributeNames={"#n": "name"},
-            ExpressionAttributeValues={":u": now, ":n": display_name},
-        )
+    name_changed = page_title and page_title != name
 
     content_hash = hashlib.sha256(markdown.encode()).hexdigest()
-    if content_hash == last_hash:
+    if content_hash == last_hash and not name_changed:
         return {"site_id": site_id, "status": "skipped", "reason": "no_change"}
 
     articles = extract_articles(markdown)
