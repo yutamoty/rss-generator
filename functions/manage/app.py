@@ -9,9 +9,11 @@ from ulid import ULID
 
 dynamodb = boto3.resource("dynamodb")
 s3 = boto3.client("s3")
+lambda_client = boto3.client("lambda")
 table = dynamodb.Table(os.environ["SITES_TABLE"])
 feed_bucket = os.environ["FEED_BUCKET"]
 distribution_domain = os.environ.get("FEED_DISTRIBUTION_DOMAIN", "")
+generate_feed_function = os.environ.get("GENERATE_FEED_FUNCTION_NAME", "")
 
 
 def lambda_handler(event, context):
@@ -61,7 +63,20 @@ def handle_add(options):
         }
     )
 
-    return {"content": f"Added: **{name}** (`{site_id}`)\n{url}"}
+    if generate_feed_function:
+        lambda_client.invoke(
+            FunctionName=generate_feed_function,
+            InvocationType="Event",
+            Payload=json.dumps({
+                "site_id": site_id,
+                "url": url,
+                "name": name,
+                "feed_path": feed_path,
+                "last_hash": "",
+            }),
+        )
+
+    return {"content": f"Added: **{name}** (`{site_id}`)\n{url}\nFeed generation started."}
 
 
 def handle_list(options):

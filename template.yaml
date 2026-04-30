@@ -122,11 +122,14 @@ Resources:
       Environment:
         Variables:
           FEED_DISTRIBUTION_DOMAIN: !GetAtt FeedDistribution.DomainName
+          GENERATE_FEED_FUNCTION_NAME: !Ref GenerateFeedFunction
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref SitesTable
         - S3CrudPolicy:
             BucketName: !Ref FeedBucket
+        - LambdaInvokePolicy:
+            FunctionName: !Ref GenerateFeedFunction
 
   # ---------- Lambda: get-sites ----------
   GetSitesFunction:
