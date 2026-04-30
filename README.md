@@ -52,7 +52,8 @@ aws ssm put-parameter \
 ### 3. Amazon Bedrock モデルアクセスの有効化
 
 1. AWS コンソール > Amazon Bedrock > Model access を開く
-2. **Amazon Nova 2 Lite** (amazon.nova-lite-v2:0) のアクセスをリクエストし、有効化する
+2. **Amazon Nova 2 Lite** (amazon.nova-2-lite-v1:0) のアクセスをリクエストし、有効化する
+   - Cross-Region Inference 経由で利用（推論プロファイル ID: `us.amazon.nova-2-lite-v1:0`）
 
 ### 4. GitHub Actions の設定（CI/CD）
 
@@ -159,6 +160,13 @@ curl -X PUT "https://discord.com/api/v10/applications/${APP_ID}/guilds/${GUILD_I
     {
       "name": "feeds",
       "description": "List feed URLs"
+    },
+    {
+      "name": "generate",
+      "description": "Generate feeds manually",
+      "options": [
+        {"name": "site_id", "description": "Site ID (omit for all sites)", "type": 3, "required": false}
+      ]
     }
   ]'
 ```
@@ -169,10 +177,11 @@ curl -X PUT "https://discord.com/api/v10/applications/${APP_ID}/guilds/${GUILD_I
 
 | コマンド | 説明 |
 |----------|------|
-| `/add <url> [name]` | RSS 化したいサイトの URL を登録（name 省略時は URL から自動生成） |
+| `/add <url> [name]` | RSS 化したいサイトの URL を登録（name 省略時は URL から自動生成）。登録と同時にフィードを即時生成 |
 | `/list` | 登録済み URL の一覧を表示 |
 | `/delete <site_id>` | 登録済み URL を削除（S3 上の XML も削除） |
 | `/feeds` | 配信中のフィード URL 一覧を表示 |
+| `/generate [site_id]` | フィードを手動生成。site_id 指定で個別、省略で全サイト |
 
 ### RSS フィードの購読
 
@@ -220,7 +229,7 @@ curl -X PUT "https://discord.com/api/v10/applications/${APP_ID}/guilds/${GUILD_I
 
 | サービス | 用途 | 備考 |
 |----------|------|------|
-| [Jina Reader API](https://jina.ai/reader/) | URL を Markdown に変換 | 無料枠: 1,000 万トークン、API キーなし 20 RPM |
+| [Jina Reader API](https://jina.ai/reader/) | URL を Markdown に変換 | API キーが必要（無料枠あり） |
 | Amazon Bedrock (Amazon Nova 2 Lite) | Markdown から記事情報を構造化抽出 | AWS アカウントでモデルアクセスの有効化が必要 |
 
 ## コスト目安
