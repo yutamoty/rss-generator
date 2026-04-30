@@ -62,15 +62,17 @@ def lambda_handler(event, context):
 
     markdown, page_title = fetch_markdown(url)
 
+    display_name = page_title or name or url
+    name_changed = page_title and page_title != name
+
     content_hash = hashlib.sha256(markdown.encode()).hexdigest()
-    if content_hash == last_hash:
+    if content_hash == last_hash and not name_changed:
         return {"site_id": site_id, "status": "skipped", "reason": "no_change"}
 
     articles = extract_articles(markdown)
     if not articles:
         return {"site_id": site_id, "status": "skipped", "reason": "no_articles"}
 
-    display_name = page_title or name or url
     atom_xml = build_atom(display_name, url, articles)
 
     s3.put_object(
