@@ -10,10 +10,12 @@ from ulid import ULID
 dynamodb = boto3.resource("dynamodb")
 s3 = boto3.client("s3")
 lambda_client = boto3.client("lambda")
+sfn_client = boto3.client("stepfunctions")
 table = dynamodb.Table(os.environ["SITES_TABLE"])
 feed_bucket = os.environ["FEED_BUCKET"]
 distribution_domain = os.environ.get("FEED_DISTRIBUTION_DOMAIN", "")
 generate_feed_function = os.environ.get("GENERATE_FEED_FUNCTION_NAME", "")
+state_machine_arn = os.environ.get("STATE_MACHINE_ARN", "")
 
 
 def lambda_handler(event, context):
@@ -25,6 +27,7 @@ def lambda_handler(event, context):
         "list": handle_list,
         "delete": handle_delete,
         "feeds": handle_feeds,
+        "generate": handle_generate,
     }
 
     handler = handlers.get(command)
@@ -113,6 +116,32 @@ def handle_delete(options):
     table.delete_item(Key={"site_id": site_id})
 
     return {"content": f"Deleted: **{item['name']}** (`{site_id}`)"}
+
+
+def handle_generate(options):
+    site_id = options.get("site_id", "").strip()
+
+    if site_id:
+        response = table.get_item(Key={"site_id": site_id})
+        item = response.get("Item")
+        if not item:
+            return {"content": f"Site not found: `{site_id}`"}
+
+        lambda_client.invoke(
+            FunctionName=generate_feed_function,
+            InvocationType="Event",
+            Payload=json.dumps({
+                "site_id": item["site_id"],
+                "url": item["url"],
+                "name": item["name"],
+                "feed_path": item["feed_path"],
+                "last_hash": item.get("last_hash", ""),
+            }),
+        )
+        return {"content": f"Feed generation started: **{item['name']}**"}
+
+    sfn_client.start_execution(stateMachineArn=state_machine_arn)
+    return {"content": "Feed generation started for all sites."}
 
 
 def handle_feeds(options):
