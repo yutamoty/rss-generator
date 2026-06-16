@@ -10,7 +10,7 @@ from urllib.error import HTTPError as URLHTTPError
 
 import boto3
 import openai
-from aws_bedrock_token_generator import BedrockTokenGenerator
+from aws_bedrock_token_generator import provide_token
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -19,7 +19,6 @@ dynamodb = boto3.resource("dynamodb")
 s3 = boto3.client("s3")
 ssm = boto3.client("ssm")
 
-_token_generator = BedrockTokenGenerator(region_name="us-east-1")
 
 table = dynamodb.Table(os.environ["SITES_TABLE"])
 feed_bucket = os.environ["FEED_BUCKET"]
@@ -120,7 +119,7 @@ def fetch_markdown(url):
 
 
 def extract_articles(markdown):
-    token = _token_generator.get_token()
+    token = provide_token(region="us-east-1")
     client = openai.OpenAI(
         base_url=BEDROCK_MANTLE_ENDPOINT,
         api_key=token,
