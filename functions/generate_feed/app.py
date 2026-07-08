@@ -9,15 +9,16 @@ import logging
 from urllib.error import HTTPError as URLHTTPError
 
 import boto3
+import openai
+from aws_bedrock_token_generator import provide_token
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 dynamodb = boto3.resource("dynamodb")
 s3 = boto3.client("s3")
-bedrock = boto3.client("bedrock-runtime")
-
 ssm = boto3.client("ssm")
+
 
 table = dynamodb.Table(os.environ["SITES_TABLE"])
 feed_bucket = os.environ["FEED_BUCKET"]
@@ -34,7 +35,8 @@ def get_jina_api_key():
         _jina_api_key = response["Parameter"]["Value"]
     return _jina_api_key
 
-BEDROCK_MODEL_ID = "us.amazon.nova-2-lite-v1:0"
+BEDROCK_MANTLE_ENDPOINT = "https://bedrock-mantle.us-east-1.api.aws/openai/v1"
+BEDROCK_MODEL_ID = "google.gemma-4-31b"
 
 EXTRACTION_PROMPT = """\
 以下のMarkdownはWebページの内容です。このページから記事・ニュース・更新情報の一覧を抽出してください。
@@ -117,26 +119,21 @@ def fetch_markdown(url):
 
 
 def extract_articles(markdown):
-    prompt = EXTRACTION_PROMPT + markdown
-
-    body = json.dumps(
-        {
-            "messages": [{"role": "user", "content": [{"text": prompt}]}],
-            "inferenceConfig": {"maxTokens": 4096, "temperature": 0.0},
-        }
+    token = provide_token(region="us-east-1")
+    client = openai.OpenAI(
+        base_url=BEDROCK_MANTLE_ENDPOINT,
+        api_key=token,
     )
 
-    response = bedrock.invoke_model(
-        modelId=BEDROCK_MODEL_ID,
-        contentType="application/json",
-        accept="application/json",
-        body=body,
+    response = client.chat.completions.create(
+        model=BEDROCK_MODEL_ID,
+        messages=[{"role": "user", "content": EXTRACTION_PROMPT + markdown}],
+        temperature=0.0,
+        max_tokens=4096,
     )
-    result = json.loads(response["body"].read())
 
-    text = result["output"]["message"]["content"][0]["text"]
+    text = response.choices[0].message.content
 
-    # Extract JSON array from response
     start = text.find("[")
     end = text.rfind("]")
     if start == -1 or end == -1:

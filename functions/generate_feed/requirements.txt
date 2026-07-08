@@ -1,0 +1,2 @@
+openai
+aws-bedrock-token-generator
