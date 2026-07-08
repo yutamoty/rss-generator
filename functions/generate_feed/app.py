@@ -46,6 +46,10 @@ def get_jina_api_key():
 BEDROCK_MANTLE_ENDPOINT = "https://bedrock-mantle.us-east-1.api.aws/openai/v1"
 BEDROCK_MODEL_ID = "google.gemma-4-31b"
 
+MAX_ARTICLES = 20
+MAX_TITLE_LENGTH = 200
+MAX_SUMMARY_LENGTH = 500
+
 EXTRACTION_PROMPT = """\
 以下のMarkdownはWebページの内容です。このページから更新情報の一覧を抽出してください。
 対象には通常の記事・ニュースだけでなく、マンガ/小説サイトの話数一覧（例: 「61話」「番外編29」「7巻」など）や、
@@ -176,14 +180,27 @@ def extract_articles(markdown, page_url):
     if not isinstance(articles, list):
         return []
 
-    return [sanitize_article(a, page_url) for a in articles if isinstance(a, dict)]
+    sanitized = [sanitize_article(a, page_url) for a in articles if isinstance(a, dict)]
+    return sanitized[:MAX_ARTICLES]
 
 
 def sanitize_article(article, page_url):
     link = article.get("link", "")
     if not is_safe_url(link):
         link = page_url
-    return {**article, "link": link}
+
+    title = article.get("title", "")
+    title = title if isinstance(title, str) else ""
+
+    summary = article.get("summary", "")
+    summary = summary if isinstance(summary, str) else ""
+
+    return {
+        **article,
+        "link": link,
+        "title": title[:MAX_TITLE_LENGTH],
+        "summary": summary[:MAX_SUMMARY_LENGTH],
+    }
 
 
 def is_safe_url(url):
