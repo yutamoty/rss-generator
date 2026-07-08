@@ -39,16 +39,30 @@ BEDROCK_MANTLE_ENDPOINT = "https://bedrock-mantle.us-east-1.api.aws/openai/v1"
 BEDROCK_MODEL_ID = "google.gemma-4-31b"
 
 EXTRACTION_PROMPT = """\
-以下のMarkdownはWebページの内容です。このページから記事・ニュース・更新情報の一覧を抽出してください。
+以下のMarkdownはWebページの内容です。このページから更新情報の一覧を抽出してください。
+対象には通常の記事・ニュースだけでなく、マンガ/小説サイトの話数一覧（例: 「61話」「番外編29」「7巻」など）や、
+動画・配信サイトのエピソード一覧なども含みます。日付が付いている見出し・エントリは幅広く候補として拾ってください。
+
+抽出対象がマンガの話数一覧などで、各話に個別のURLが記載されていない場合や、
+リンク先が全話共通で作品ページURLになっている場合は、"link" にはページ自身のURL ({page_url}) を使用してください。
+
+日付は "2026/07/19" のようなYYYY/MM/DD形式、"2026/06/01発売" のような表記、
+"2026.06.28〜2026.07.11" のようなドット区切り＋期間レンジの表記もあります。
+期間レンジの場合は開始日を使用してください。可能な限りYYYY-MM-DD形式に正規化してください。不明な場合は空文字にしてください。
+
+「次回更新：7月12日」のような、まだ公開されていない次話の予告・カウントダウン表示は抽出対象に含めないでください。
+実際に公開済みの話数・記事のみを対象にしてください。
+
+項目数が多い場合は、日付が新しい順に最大20件までにしてください。
 
 以下のJSON配列形式で出力してください。JSON以外は出力しないでください。
 [
-  {
-    "title": "記事タイトル",
-    "link": "記事の絶対URL",
+  {{
+    "title": "記事タイトル・話数タイトル",
+    "link": "記事の絶対URL（個別URLがなければページURL）",
     "date": "公開日 (YYYY-MM-DD形式、不明なら空文字)",
-    "summary": "記事の要約 (1-2文)"
-  }
+    "summary": "記事・話数の要約 (1-2文)"
+  }}
 ]
 
 Markdown:
@@ -71,7 +85,7 @@ def lambda_handler(event, context):
     if content_hash == last_hash and not name_changed:
         return {"site_id": site_id, "status": "skipped", "reason": "no_change"}
 
-    articles = extract_articles(markdown)
+    articles = extract_articles(markdown, url)
     if not articles:
         return {"site_id": site_id, "status": "skipped", "reason": "no_articles"}
 
@@ -118,16 +132,17 @@ def fetch_markdown(url):
     return content, title
 
 
-def extract_articles(markdown):
+def extract_articles(markdown, page_url):
     token = provide_token(region="us-east-1")
     client = openai.OpenAI(
         base_url=BEDROCK_MANTLE_ENDPOINT,
         api_key=token,
     )
 
+    prompt = EXTRACTION_PROMPT.format(page_url=page_url) + markdown
     response = client.chat.completions.create(
         model=BEDROCK_MODEL_ID,
-        messages=[{"role": "user", "content": EXTRACTION_PROMPT + markdown}],
+        messages=[{"role": "user", "content": prompt}],
         temperature=0.0,
         max_tokens=4096,
     )
@@ -161,7 +176,9 @@ def build_atom(site_name, site_url, articles):
         SubElement(entry, "title").text = article.get("title", "")
         link = article.get("link", "")
         SubElement(entry, "link", href=link, rel="alternate")
-        SubElement(entry, "id").text = link or article.get("title", "")
+        title = article.get("title", "")
+        entry_id = f"{link}#{title}" if link else title
+        SubElement(entry, "id").text = entry_id
 
         date = article.get("date", "")
         if date:

@@ -47,13 +47,30 @@ aws ssm put-parameter \
   --value "<YOUR_JINA_API_KEY>"
 ```
 
+以下の2つは `template.yaml` の `AWS::SSM::Parameter::Value<String>` 型パラメータが参照するため、
+独自ドメインを使わない場合でも **空文字列で作成しておく必要があります**（存在しないとデプロイが失敗します）。
+
+```bash
+# 独自ドメイン（使わない場合は空文字列のままでOK。9章参照）
+aws ssm put-parameter \
+  --name "/rss-generator/feed-custom-domain-name" \
+  --type String \
+  --value ""
+
+# 独自ドメイン用 ACM 証明書 ARN（使わない場合は空文字列のままでOK。9章参照）
+aws ssm put-parameter \
+  --name "/rss-generator/feed-acm-certificate-arn" \
+  --type String \
+  --value ""
+```
+
 > パラメータ名は `template.yaml` 内の参照と一致させてください。
 
 ### 3. Amazon Bedrock モデルアクセスの有効化
 
 1. AWS コンソール > Amazon Bedrock > Model access を開く
-2. **Amazon Nova 2 Lite** (amazon.nova-2-lite-v1:0) のアクセスをリクエストし、有効化する
-   - Cross-Region Inference 経由で利用（推論プロファイル ID: `us.amazon.nova-2-lite-v1:0`）
+2. **Gemma 4 31B** (google.gemma-4-31b) のアクセスをリクエストし、有効化する
+   - Bedrock の OpenAI 互換エンドポイント（Bedrock Mantle）経由で利用するため、通常の `bedrock:InvokeModel` 権限に加えて `aws-bedrock-token-generator` で発行した一時トークンを使用する
 
 ### 4. GitHub Actions の設定（CI/CD）
 
@@ -94,6 +111,9 @@ aws iam create-open-id-connect-provider \
   ]
 }
 ```
+
+> `template.yaml` は `AWS::SSM::Parameter::Value<String>` 型パラメータ（`/rss-generator/feed-custom-domain-name` 等）を参照するため、
+> このロールの権限に `ssm:GetParameters` を含めてください（デプロイ時に CloudFormation が SSM から値を解決します）。
 
 #### 4c. GitHub リポジトリの Secrets 設定
 
@@ -171,6 +191,73 @@ curl -X PUT "https://discord.com/api/v10/applications/${APP_ID}/guilds/${GUILD_I
   ]'
 ```
 
+### 9. 独自ドメインの設定（任意）
+
+デフォルトでは CloudFront のドメイン（`dxxxxxxxxxxxxx.cloudfront.net`）でフィードが配信されますが、
+外部 DNS（お名前.com、Cloudflare など Route 53 以外の DNS）を使っている場合、以下の手順で独自ドメインに対応できます。
+
+#### 9a. ACM 証明書の発行（us-east-1・手動）
+
+CloudFront で使う証明書は **us-east-1 リージョン** に存在している必要があります。
+外部 DNS の場合、CloudFormation にDNS検証を任せると検証用CNAMEを追加するまでスタック作成がブロックされてしまうため、
+先に手動で証明書を発行しておくことを推奨します。
+
+```bash
+aws acm request-certificate \
+  --domain-name "feeds.example.com" \
+  --validation-method DNS \
+  --region us-east-1
+```
+
+出力される証明書 ARN を控えてください。続けて検証用の CNAME レコードを取得します。
+
+```bash
+aws acm describe-certificate \
+  --certificate-arn "<CERTIFICATE_ARN>" \
+  --region us-east-1 \
+  --query "Certificate.DomainValidationOptions[0].ResourceRecord"
+```
+
+表示された `Name`（CNAME名）と `Value`（CNAME値）を、外部 DNS の管理画面で **CNAME レコードとして登録**してください。
+反映後、証明書のステータスが `ISSUED` になるまで待ちます（数分〜数十分程度）。
+
+```bash
+aws acm wait certificate-validated --certificate-arn "<CERTIFICATE_ARN>" --region us-east-1
+```
+
+#### 9b. SSM パラメータストアの値を更新
+
+ドメイン名や証明書 ARN を `samconfig.toml`（リポジトリにコミットされるファイル）に書くと、
+リポジトリを閲覧できる人全員に見えてしまいます。このプロジェクトでは `template.yaml` が
+`AWS::SSM::Parameter::Value<String>` 型でパラメータを参照しているため、実際の値は
+**SSM パラメータストアの値を上書きするだけ**で済み、リポジトリには一切残りません。
+
+```bash
+aws ssm put-parameter \
+  --name "/rss-generator/feed-custom-domain-name" \
+  --type String \
+  --value "feeds.example.com" \
+  --overwrite
+
+aws ssm put-parameter \
+  --name "/rss-generator/feed-acm-certificate-arn" \
+  --type String \
+  --value "<CERTIFICATE_ARN>" \
+  --overwrite
+```
+
+SSM の値を更新しただけでは CloudFormation スタックには反映されません（デプロイ時に一度だけ解決される値のため）。
+`main` に何かしら push するか、GitHub Actions の該当ワークフローを手動で re-run して再デプロイを実行してください。
+これで CloudFront に独自ドメインのエイリアス（Alternate Domain Name）と証明書が設定されます。
+
+#### 9c. 独自ドメインの DNS レコードを追加
+
+デプロイ完了後、CloudFormation スタックの Outputs にある `FeedDistributionDomain`（CloudFront のドメイン）を確認し、
+外部 DNS で独自ドメイン（例: `feeds.example.com`）から CloudFront ドメインへの **CNAME レコード**を作成してください。
+
+反映後、`https://feeds.example.com/feeds/xxx.xml` のような形でフィードにアクセスできるようになります。
+（`/feeds` コマンドの出力も自動的に独自ドメインベースの URL に切り替わります）
+
 ## 使い方
 
 ### Discord Slash Commands
@@ -198,7 +285,7 @@ curl -X PUT "https://discord.com/api/v10/applications/${APP_ID}/guilds/${GUILD_I
   EventBridge → Step Functions → Map (並列)
     → Lambda (generate-feed)
       → Jina Reader API (Markdown化)
-      → Amazon Bedrock (記事の構造化抽出)
+      → Amazon Bedrock (Gemma 4 31B, 記事の構造化抽出)
       → S3 (Atom XML 保存)
 
 [RSS配信]
@@ -230,7 +317,7 @@ curl -X PUT "https://discord.com/api/v10/applications/${APP_ID}/guilds/${GUILD_I
 | サービス | 用途 | 備考 |
 |----------|------|------|
 | [Jina Reader API](https://jina.ai/reader/) | URL を Markdown に変換 | API キーが必要（無料枠あり） |
-| Amazon Bedrock (Amazon Nova 2 Lite) | Markdown から記事情報を構造化抽出 | AWS アカウントでモデルアクセスの有効化が必要 |
+| Amazon Bedrock (Gemma 4 31B) | Markdown から記事情報を構造化抽出 | AWS アカウントでモデルアクセスの有効化が必要 |
 
 ## コスト目安
 
