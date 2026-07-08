@@ -1,6 +1,8 @@
+import ipaddress
 import json
 import os
 import re
+import socket
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 
@@ -37,6 +39,39 @@ def lambda_handler(event, context):
     return handler(options)
 
 
+def is_public_hostname(hostname):
+    """Reject loopback/private/link-local/reserved hosts to mitigate SSRF."""
+    if not hostname:
+        return False
+
+    hostname = hostname.strip(".").lower()
+    if hostname == "localhost" or hostname.endswith(".localhost") or hostname.endswith(".local"):
+        return False
+
+    try:
+        ip = ipaddress.ip_address(hostname)
+        addrs = [ip]
+    except ValueError:
+        try:
+            infos = socket.getaddrinfo(hostname, None)
+        except (socket.gaierror, UnicodeError):
+            return False
+        addrs = [ipaddress.ip_address(info[4][0]) for info in infos]
+
+    for addr in addrs:
+        if (
+            addr.is_private
+            or addr.is_loopback
+            or addr.is_link_local
+            or addr.is_reserved
+            or addr.is_multicast
+            or addr.is_unspecified
+        ):
+            return False
+
+    return bool(addrs)
+
+
 def handle_add(options):
     url = options.get("url", "").strip()
     if not url:
@@ -45,6 +80,9 @@ def handle_add(options):
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
         return {"content": "Invalid URL."}
+
+    if not is_public_hostname(parsed.hostname):
+        return {"content": "Invalid URL: host is not a publicly reachable address."}
 
     name = options.get("name", "").strip()
     if not name:
