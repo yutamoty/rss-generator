@@ -52,8 +52,8 @@ aws ssm put-parameter \
 ### 3. Amazon Bedrock モデルアクセスの有効化
 
 1. AWS コンソール > Amazon Bedrock > Model access を開く
-2. **Amazon Nova 2 Lite** (amazon.nova-2-lite-v1:0) のアクセスをリクエストし、有効化する
-   - Cross-Region Inference 経由で利用（推論プロファイル ID: `us.amazon.nova-2-lite-v1:0`）
+2. **Gemma 4 31B** (google.gemma-4-31b) のアクセスをリクエストし、有効化する
+   - Bedrock の OpenAI 互換エンドポイント（Bedrock Mantle）経由で利用するため、通常の `bedrock:InvokeModel` 権限に加えて `aws-bedrock-token-generator` で発行した一時トークンを使用する
 
 ### 4. GitHub Actions の設定（CI/CD）
 
@@ -198,7 +198,7 @@ curl -X PUT "https://discord.com/api/v10/applications/${APP_ID}/guilds/${GUILD_I
   EventBridge → Step Functions → Map (並列)
     → Lambda (generate-feed)
       → Jina Reader API (Markdown化)
-      → Amazon Bedrock (記事の構造化抽出)
+      → Amazon Bedrock (Gemma 4 31B, 記事の構造化抽出)
       → S3 (Atom XML 保存)
 
 [RSS配信]
@@ -230,7 +230,7 @@ curl -X PUT "https://discord.com/api/v10/applications/${APP_ID}/guilds/${GUILD_I
 | サービス | 用途 | 備考 |
 |----------|------|------|
 | [Jina Reader API](https://jina.ai/reader/) | URL を Markdown に変換 | API キーが必要（無料枠あり） |
-| Amazon Bedrock (Amazon Nova 2 Lite) | Markdown から記事情報を構造化抽出 | AWS アカウントでモデルアクセスの有効化が必要 |
+| Amazon Bedrock (Gemma 4 31B) | Markdown から記事情報を構造化抽出 | AWS アカウントでモデルアクセスの有効化が必要 |
 
 ## コスト目安
 
