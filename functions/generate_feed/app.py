@@ -34,11 +34,12 @@ def get_jina_api_key():
             response = ssm.get_parameter(
                 Name=os.environ["JINA_API_KEY_PARAM"], WithDecryption=True
             )
-            _jina_api_key = response["Parameter"]["Value"]
+            value = response["Parameter"]["Value"]
         except ClientError as e:
             if e.response["Error"]["Code"] != "ParameterNotFound":
                 raise
-            _jina_api_key = ""
+            value = ""
+        _jina_api_key = "" if value == "none" else value
     return _jina_api_key
 
 BEDROCK_MANTLE_ENDPOINT = "https://bedrock-mantle.us-east-1.api.aws/openai/v1"
