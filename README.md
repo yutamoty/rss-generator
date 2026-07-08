@@ -47,6 +47,23 @@ aws ssm put-parameter \
   --value "<YOUR_JINA_API_KEY>"
 ```
 
+以下の2つは `template.yaml` の `AWS::SSM::Parameter::Value<String>` 型パラメータが参照するため、
+独自ドメインを使わない場合でも **空文字列で作成しておく必要があります**（存在しないとデプロイが失敗します）。
+
+```bash
+# 独自ドメイン（使わない場合は空文字列のままでOK。9章参照）
+aws ssm put-parameter \
+  --name "/rss-generator/feed-custom-domain-name" \
+  --type String \
+  --value ""
+
+# 独自ドメイン用 ACM 証明書 ARN（使わない場合は空文字列のままでOK。9章参照）
+aws ssm put-parameter \
+  --name "/rss-generator/feed-acm-certificate-arn" \
+  --type String \
+  --value ""
+```
+
 > パラメータ名は `template.yaml` 内の参照と一致させてください。
 
 ### 3. Amazon Bedrock モデルアクセスの有効化
@@ -94,6 +111,9 @@ aws iam create-open-id-connect-provider \
   ]
 }
 ```
+
+> `template.yaml` は `AWS::SSM::Parameter::Value<String>` 型パラメータ（`/rss-generator/feed-custom-domain-name` 等）を参照するため、
+> このロールの権限に `ssm:GetParameters` を含めてください（デプロイ時に CloudFormation が SSM から値を解決します）。
 
 #### 4c. GitHub リポジトリの Secrets 設定
 
@@ -205,18 +225,30 @@ aws acm describe-certificate \
 aws acm wait certificate-validated --certificate-arn "<CERTIFICATE_ARN>" --region us-east-1
 ```
 
-#### 9b. `samconfig.toml` にパラメータを追加
+#### 9b. SSM パラメータストアの値を更新
 
-```toml
-[default.deploy.parameters]
-stack_name = "rss-generator"
-region = "us-east-1"
-capabilities = "CAPABILITY_IAM"
-resolve_s3 = true
-parameter_overrides = "FeedCustomDomainName=feeds.example.com FeedAcmCertificateArn=<CERTIFICATE_ARN>"
+ドメイン名や証明書 ARN を `samconfig.toml`（リポジトリにコミットされるファイル）に書くと、
+リポジトリを閲覧できる人全員に見えてしまいます。このプロジェクトでは `template.yaml` が
+`AWS::SSM::Parameter::Value<String>` 型でパラメータを参照しているため、実際の値は
+**SSM パラメータストアの値を上書きするだけ**で済み、リポジトリには一切残りません。
+
+```bash
+aws ssm put-parameter \
+  --name "/rss-generator/feed-custom-domain-name" \
+  --type String \
+  --value "feeds.example.com" \
+  --overwrite
+
+aws ssm put-parameter \
+  --name "/rss-generator/feed-acm-certificate-arn" \
+  --type String \
+  --value "<CERTIFICATE_ARN>" \
+  --overwrite
 ```
 
-`main` に push すると GitHub Actions が再デプロイし、CloudFront に独自ドメインのエイリアス（Alternate Domain Name）と証明書が設定されます。
+SSM の値を更新しただけでは CloudFormation スタックには反映されません（デプロイ時に一度だけ解決される値のため）。
+`main` に何かしら push するか、GitHub Actions の該当ワークフローを手動で re-run して再デプロイを実行してください。
+これで CloudFront に独自ドメインのエイリアス（Alternate Domain Name）と証明書が設定されます。
 
 #### 9c. 独自ドメインの DNS レコードを追加
 
