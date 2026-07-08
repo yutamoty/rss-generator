@@ -117,6 +117,7 @@ def fetch_markdown(url):
             "Accept": "application/json",
             "Authorization": f"Bearer {get_jina_api_key()}",
             "User-Agent": "Mozilla/5.0 (compatible; RSSGenerator/1.0)",
+            "X-Retain-Images": "none",
         },
     )
     try:
