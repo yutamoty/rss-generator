@@ -47,26 +47,33 @@ aws ssm put-parameter \
   --value "<YOUR_JINA_API_KEY>"
 ```
 
-> **無料（APIキーなし）で使う場合**: 上記の値を空文字列（`--value ""`）にすると、Lambda は
-> Jina Reader を匿名アクセスで呼び出します。匿名アクセスはトークン残高を消費せず無料ですが、
-> レート制限が **20 RPM** と低いため、Step Functions の Map は `MaxConcurrency: 5` で
-> 同時実行数を絞っています。登録サイト数が多い場合は日次実行が完了までやや時間がかかります。
+> **無料（APIキーなし）で使う場合**: SSM の String/SecureString パラメータは空文字列を値として
+> 保存できない（`aws ssm put-parameter` が `ValidationException` で失敗する）ため、上記のパラメータ
+> **自体を削除**してください。Lambda はパラメータが存在しない場合も Jina Reader を匿名アクセスで
+> 呼び出します。匿名アクセスはトークン残高を消費せず無料ですが、レート制限が **20 RPM** と低いため、
+> Step Functions の Map は `MaxConcurrency: 5` で同時実行数を絞っています。登録サイト数が多い場合は
+> 日次実行が完了までやや時間がかかります。
+>
+> ```bash
+> aws ssm delete-parameter --name "/rss-generator/jina-api-key"
+> ```
 
 以下の2つは `template.yaml` の `AWS::SSM::Parameter::Value<String>` 型パラメータが参照するため、
-独自ドメインを使わない場合でも **空文字列で作成しておく必要があります**（存在しないとデプロイが失敗します）。
+独自ドメインを使わない場合でも作成しておく必要があります（存在しないとデプロイが失敗します）。
+こちらも SSM は空文字列を値として保存できないため、未設定を表す値として **`"none"`** を使います。
 
 ```bash
-# 独自ドメイン（使わない場合は空文字列のままでOK。9章参照）
+# 独自ドメイン（使わない場合は "none" のままでOK。9章参照）
 aws ssm put-parameter \
   --name "/rss-generator/feed-custom-domain-name" \
   --type String \
-  --value ""
+  --value "none"
 
-# 独自ドメイン用 ACM 証明書 ARN（使わない場合は空文字列のままでOK。9章参照）
+# 独自ドメイン用 ACM 証明書 ARN（使わない場合は "none" のままでOK。9章参照）
 aws ssm put-parameter \
   --name "/rss-generator/feed-acm-certificate-arn" \
   --type String \
-  --value ""
+  --value "none"
 ```
 
 > パラメータ名は `template.yaml` 内の参照と一致させてください。

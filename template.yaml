@@ -18,8 +18,9 @@ Parameters:
     Default: /rss-generator/feed-custom-domain-name
     Description: >-
       Name of an SSM Parameter Store String parameter holding the custom
-      domain for the Atom feed distribution (e.g. feeds.example.com), or an
-      empty string to use the default CloudFront domain. Keeping the actual
+      domain for the Atom feed distribution (e.g. feeds.example.com), or the
+      literal string "none" to use the default CloudFront domain (SSM
+      String parameters cannot store an empty value). Keeping the actual
       domain in Parameter Store (rather than samconfig.toml) keeps it out of
       the repo. Requires FeedAcmCertificateArn to also be set, and a DNS
       CNAME/ALIAS record pointing this domain at the CloudFront distribution
@@ -29,11 +30,11 @@ Parameters:
     Default: /rss-generator/feed-acm-certificate-arn
     Description: >-
       Name of an SSM Parameter Store String parameter holding the ACM
-      certificate ARN (us-east-1) for FeedCustomDomainName, or an empty
-      string. Required if FeedCustomDomainName is set.
+      certificate ARN (us-east-1) for FeedCustomDomainName, or the literal
+      string "none". Required if FeedCustomDomainName is set.
 
 Conditions:
-  HasCustomDomain: !Not [!Equals [!Ref FeedCustomDomainName, ""]]
+  HasCustomDomain: !Not [!Equals [!Ref FeedCustomDomainName, "none"]]
 
 Resources:
   # ---------- DynamoDB ----------
