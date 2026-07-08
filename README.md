@@ -171,6 +171,61 @@ curl -X PUT "https://discord.com/api/v10/applications/${APP_ID}/guilds/${GUILD_I
   ]'
 ```
 
+### 9. 独自ドメインの設定（任意）
+
+デフォルトでは CloudFront のドメイン（`dxxxxxxxxxxxxx.cloudfront.net`）でフィードが配信されますが、
+外部 DNS（お名前.com、Cloudflare など Route 53 以外の DNS）を使っている場合、以下の手順で独自ドメインに対応できます。
+
+#### 9a. ACM 証明書の発行（us-east-1・手動）
+
+CloudFront で使う証明書は **us-east-1 リージョン** に存在している必要があります。
+外部 DNS の場合、CloudFormation にDNS検証を任せると検証用CNAMEを追加するまでスタック作成がブロックされてしまうため、
+先に手動で証明書を発行しておくことを推奨します。
+
+```bash
+aws acm request-certificate \
+  --domain-name "feeds.example.com" \
+  --validation-method DNS \
+  --region us-east-1
+```
+
+出力される証明書 ARN を控えてください。続けて検証用の CNAME レコードを取得します。
+
+```bash
+aws acm describe-certificate \
+  --certificate-arn "<CERTIFICATE_ARN>" \
+  --region us-east-1 \
+  --query "Certificate.DomainValidationOptions[0].ResourceRecord"
+```
+
+表示された `Name`（CNAME名）と `Value`（CNAME値）を、外部 DNS の管理画面で **CNAME レコードとして登録**してください。
+反映後、証明書のステータスが `ISSUED` になるまで待ちます（数分〜数十分程度）。
+
+```bash
+aws acm wait certificate-validated --certificate-arn "<CERTIFICATE_ARN>" --region us-east-1
+```
+
+#### 9b. `samconfig.toml` にパラメータを追加
+
+```toml
+[default.deploy.parameters]
+stack_name = "rss-generator"
+region = "us-east-1"
+capabilities = "CAPABILITY_IAM"
+resolve_s3 = true
+parameter_overrides = "FeedCustomDomainName=feeds.example.com FeedAcmCertificateArn=<CERTIFICATE_ARN>"
+```
+
+`main` に push すると GitHub Actions が再デプロイし、CloudFront に独自ドメインのエイリアス（Alternate Domain Name）と証明書が設定されます。
+
+#### 9c. 独自ドメインの DNS レコードを追加
+
+デプロイ完了後、CloudFormation スタックの Outputs にある `FeedDistributionDomain`（CloudFront のドメイン）を確認し、
+外部 DNS で独自ドメイン（例: `feeds.example.com`）から CloudFront ドメインへの **CNAME レコード**を作成してください。
+
+反映後、`https://feeds.example.com/feeds/xxx.xml` のような形でフィードにアクセスできるようになります。
+（`/feeds` コマンドの出力も自動的に独自ドメインベースの URL に切り替わります）
+
 ## 使い方
 
 ### Discord Slash Commands

@@ -13,10 +13,24 @@ Globals:
         FEED_BUCKET: !Ref FeedBucket
 
 Parameters:
-  CloudFrontDomainName:
+  FeedCustomDomainName:
     Type: String
     Default: ""
-    Description: CloudFront distribution domain name (set after first deploy)
+    Description: >-
+      Custom domain for the Atom feed distribution (e.g. feeds.example.com).
+      Leave empty to use the default CloudFront domain. Requires
+      FeedAcmCertificateArn to also be set, and a DNS CNAME/ALIAS record
+      pointing this domain at the CloudFront distribution domain (see Outputs).
+  FeedAcmCertificateArn:
+    Type: String
+    Default: ""
+    Description: >-
+      ARN of an ACM certificate in us-east-1 covering FeedCustomDomainName.
+      Must be issued/validated before deploying (DNS validation record added
+      to your DNS provider). Required if FeedCustomDomainName is set.
+
+Conditions:
+  HasCustomDomain: !Not [!Equals [!Ref FeedCustomDomainName, ""]]
 
 Resources:
   # ---------- DynamoDB ----------
@@ -80,6 +94,16 @@ Resources:
             S3OriginConfig:
               OriginAccessIdentity: ""
             OriginAccessControlId: !GetAtt FeedOriginAccessControl.Id
+        Aliases: !If
+          - HasCustomDomain
+          - [!Ref FeedCustomDomainName]
+          - !Ref AWS::NoValue
+        ViewerCertificate: !If
+          - HasCustomDomain
+          - AcmCertificateArn: !Ref FeedAcmCertificateArn
+            SslSupportMethod: sni-only
+            MinimumProtocolVersion: TLSv1.2_2021
+          - CloudFrontDefaultCertificate: true
 
   # ---------- API Gateway ----------
   DiscordApi:
@@ -121,7 +145,10 @@ Resources:
       Handler: app.lambda_handler
       Environment:
         Variables:
-          FEED_DISTRIBUTION_DOMAIN: !GetAtt FeedDistribution.DomainName
+          FEED_DISTRIBUTION_DOMAIN: !If
+            - HasCustomDomain
+            - !Ref FeedCustomDomainName
+            - !GetAtt FeedDistribution.DomainName
           GENERATE_FEED_FUNCTION_NAME: !Ref GenerateFeedFunction
           STATE_MACHINE_ARN: !Ref FeedGeneratorStateMachine
       Policies:
@@ -197,7 +224,9 @@ Outputs:
     Description: Discord Interactions Endpoint URL
     Value: !Sub "https://${DiscordApi}.execute-api.${AWS::Region}.amazonaws.com/prod/interactions"
   FeedDistributionDomain:
-    Description: CloudFront domain for Atom feeds
+    Description: >-
+      CloudFront distribution domain. Point your external DNS CNAME/ALIAS
+      record for FeedCustomDomainName at this value.
     Value: !GetAtt FeedDistribution.DomainName
   SitesTableName:
     Description: DynamoDB sites table name
