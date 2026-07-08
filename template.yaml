@@ -206,6 +206,11 @@ Resources:
                 - bedrock-mantle:CreateInference
               Resource:
                 - !Sub "arn:aws:bedrock-mantle:us-east-1:${AWS::AccountId}:project/default"
+            - Effect: Allow
+              Action:
+                - bedrock-mantle:CallWithBearerToken
+              Resource:
+                - "*"
 
   # ---------- Step Functions ----------
   FeedGeneratorStateMachine:
