@@ -195,31 +195,7 @@ Resources:
             TableName: !Ref SitesTable
         - S3CrudPolicy:
             BucketName: !Ref FeedBucket
-        - Statement:
-            - Effect: Allow
-              Action:
-                - bedrock:InvokeModel
-              Resource:
-                - "arn:aws:bedrock:us-east-1::foundation-model/google.gemma-4-31b"
-            - Effect: Allow
-              Action:
-                - bedrock-mantle:CreateInference
-              Resource:
-                - !Sub "arn:aws:bedrock-mantle:us-east-1:${AWS::AccountId}:project/default"
-            - Effect: Allow
-              Action:
-                - bedrock-mantle:CallWithBearerToken
-              Resource:
-                - "*"
-            - Effect: Allow
-              Action:
-                - aws-marketplace:Subscribe
-                - aws-marketplace:ViewSubscriptions
-              Resource:
-                - "*"
-              Condition:
-                StringEquals:
-                  aws:CalledViaLast: bedrock-mantle.amazonaws.com
+        - arn:aws:iam::aws:policy/AmazonBedrockMantleFullAccess
 
   # ---------- Step Functions ----------
   FeedGeneratorStateMachine:
