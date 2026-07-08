@@ -47,6 +47,11 @@ aws ssm put-parameter \
   --value "<YOUR_JINA_API_KEY>"
 ```
 
+> **無料（APIキーなし）で使う場合**: 上記の値を空文字列（`--value ""`）にすると、Lambda は
+> Jina Reader を匿名アクセスで呼び出します。匿名アクセスはトークン残高を消費せず無料ですが、
+> レート制限が **20 RPM** と低いため、Step Functions の Map は `MaxConcurrency: 5` で
+> 同時実行数を絞っています。登録サイト数が多い場合は日次実行が完了までやや時間がかかります。
+
 以下の2つは `template.yaml` の `AWS::SSM::Parameter::Value<String>` 型パラメータが参照するため、
 独自ドメインを使わない場合でも **空文字列で作成しておく必要があります**（存在しないとデプロイが失敗します）。
 
@@ -316,7 +321,7 @@ SSM の値を更新しただけでは CloudFormation スタックには反映さ
 
 | サービス | 用途 | 備考 |
 |----------|------|------|
-| [Jina Reader API](https://jina.ai/reader/) | URL を Markdown に変換 | API キーが必要（無料枠あり） |
+| [Jina Reader API](https://jina.ai/reader/) | URL を Markdown に変換 | API キー未設定なら匿名アクセス（無料・20 RPM制限）。APIキーを設定すると従量課金アカウント扱いになる |
 | Amazon Bedrock (Gemma 4 31B) | Markdown から記事情報を構造化抽出 | AWS アカウントでモデルアクセスの有効化が必要 |
 
 ## コスト目安
