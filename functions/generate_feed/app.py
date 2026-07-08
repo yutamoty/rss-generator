@@ -11,6 +11,7 @@ from urllib.error import HTTPError as URLHTTPError
 import boto3
 import openai
 from aws_bedrock_token_generator import provide_token
+from botocore.exceptions import ClientError
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -29,10 +30,15 @@ _jina_api_key = None
 def get_jina_api_key():
     global _jina_api_key
     if _jina_api_key is None:
-        response = ssm.get_parameter(
-            Name=os.environ["JINA_API_KEY_PARAM"], WithDecryption=True
-        )
-        _jina_api_key = response["Parameter"]["Value"]
+        try:
+            response = ssm.get_parameter(
+                Name=os.environ["JINA_API_KEY_PARAM"], WithDecryption=True
+            )
+            _jina_api_key = response["Parameter"]["Value"]
+        except ClientError as e:
+            if e.response["Error"]["Code"] != "ParameterNotFound":
+                raise
+            _jina_api_key = ""
     return _jina_api_key
 
 BEDROCK_MANTLE_ENDPOINT = "https://bedrock-mantle.us-east-1.api.aws/openai/v1"
@@ -111,15 +117,15 @@ def lambda_handler(event, context):
 
 def fetch_markdown(url):
     jina_url = f"https://r.jina.ai/{url}"
-    req = Request(
-        jina_url,
-        headers={
-            "Accept": "application/json",
-            "Authorization": f"Bearer {get_jina_api_key()}",
-            "User-Agent": "Mozilla/5.0 (compatible; RSSGenerator/1.0)",
-            "X-Retain-Images": "none",
-        },
-    )
+    headers = {
+        "Accept": "application/json",
+        "User-Agent": "Mozilla/5.0 (compatible; RSSGenerator/1.0)",
+        "X-Retain-Images": "none",
+    }
+    api_key = get_jina_api_key()
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    req = Request(jina_url, headers=headers)
     try:
         with urlopen(req, timeout=30) as resp:
             data = json.loads(resp.read())

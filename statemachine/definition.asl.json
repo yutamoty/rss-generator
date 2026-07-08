@@ -26,6 +26,7 @@
     "GenerateFeeds": {
       "Type": "Map",
       "ItemsPath": "$.result.sites",
+      "MaxConcurrency": 5,
       "ItemProcessor": {
         "ProcessorConfig": {
           "Mode": "INLINE"
