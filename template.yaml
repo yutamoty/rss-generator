@@ -201,6 +201,11 @@ Resources:
                 - bedrock:InvokeModel
               Resource:
                 - "arn:aws:bedrock:us-east-1::foundation-model/google.gemma-4-31b"
+            - Effect: Allow
+              Action:
+                - bedrock-mantle:CreateInference
+              Resource:
+                - !Sub "arn:aws:bedrock-mantle:us-east-1:${AWS::AccountId}:project/default"
 
   # ---------- Step Functions ----------
   FeedGeneratorStateMachine:
