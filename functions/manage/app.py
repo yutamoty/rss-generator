@@ -29,26 +29,41 @@ generate_feed_function = os.environ.get("GENERATE_FEED_FUNCTION_NAME", "")
 state_machine_arn = os.environ.get("STATE_MACHINE_ARN", "")
 
 
-def send_followup(application_id, token, content):
-    """Edit the deferred Discord interaction response with the final result.
+def split_into_chunks(content, limit):
+    """Split content into chunks at line breaks, each within `limit` chars.
 
-    application_id/token are absent when invoked directly (e.g. console
-    testing), in which case there is no Discord interaction to update.
+    A single line longer than `limit` is hard-split as a last resort.
     """
-    if not application_id or not token:
-        return
+    lines = content.split("\n")
+    chunks = []
+    current = ""
+    for line in lines:
+        candidate = f"{current}\n{line}" if current else line
+        if len(candidate) <= limit:
+            current = candidate
+            continue
 
-    # Discord rejects message content over 2000 characters with HTTP 400.
-    # Lists like /feeds and /list grow with the number of registered sites,
-    # so truncate defensively rather than silently failing to notify.
-    if len(content) > DISCORD_CONTENT_MAX_LENGTH:
-        content = content[: DISCORD_CONTENT_MAX_LENGTH - 1] + "…"
+        if current:
+            chunks.append(current)
+            current = ""
 
-    url = f"{DISCORD_API_BASE}/webhooks/{application_id}/{token}/messages/@original"
+        if len(line) <= limit:
+            current = line
+        else:
+            for i in range(0, len(line), limit):
+                chunks.append(line[i : i + limit])
+
+    if current:
+        chunks.append(current)
+
+    return chunks or [""]
+
+
+def discord_request(method, url, payload):
     req = Request(
         url,
-        data=json.dumps({"content": content}).encode(),
-        method="PATCH",
+        data=json.dumps(payload).encode(),
+        method=method,
         headers={
             "Content-Type": "application/json",
             # Discord's edge (Cloudflare) blocks requests carrying urllib's
@@ -61,9 +76,32 @@ def send_followup(application_id, token, content):
         urlopen(req, timeout=10)
     except HTTPError as e:
         body = e.read().decode("utf-8", errors="replace")
-        logger.error("Discord rejected followup message: status=%s body=%s", e.code, body)
+        logger.error("Discord rejected %s %s: status=%s body=%s", method, url, e.code, body)
     except URLError:
-        logger.exception("Failed to send Discord followup message")
+        logger.exception("Failed to call Discord API: %s %s", method, url)
+
+
+def send_followup(application_id, token, content):
+    """Deliver the deferred Discord interaction result as one or more messages.
+
+    application_id/token are absent when invoked directly (e.g. console
+    testing), in which case there is no Discord interaction to update.
+
+    Discord rejects message content over 2000 characters, and lists like
+    /feeds and /list grow with the number of registered sites, so the
+    content is split across multiple messages rather than truncated: the
+    first chunk edits the deferred response, the rest are sent as
+    additional followup messages.
+    """
+    if not application_id or not token:
+        return
+
+    webhook_base = f"{DISCORD_API_BASE}/webhooks/{application_id}/{token}"
+    chunks = split_into_chunks(content, DISCORD_CONTENT_MAX_LENGTH)
+
+    discord_request("PATCH", f"{webhook_base}/messages/@original", {"content": chunks[0]})
+    for chunk in chunks[1:]:
+        discord_request("POST", webhook_base, {"content": chunk})
 
 
 def lambda_handler(event, context):
