@@ -42,7 +42,13 @@ def send_followup(application_id, token, content):
         url,
         data=json.dumps({"content": content}).encode(),
         method="PATCH",
-        headers={"Content-Type": "application/json"},
+        headers={
+            "Content-Type": "application/json",
+            # Discord's edge (Cloudflare) blocks requests carrying urllib's
+            # default "Python-urllib/x.y" User-Agent as bot traffic (403),
+            # independent of the interaction token's validity.
+            "User-Agent": "DiscordBot (https://github.com/yutamoty/rss-generator, 1.0)",
+        },
     )
     try:
         urlopen(req, timeout=10)
