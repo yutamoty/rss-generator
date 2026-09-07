@@ -5,7 +5,7 @@ import os
 import re
 import socket
 from datetime import datetime, timezone
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
@@ -16,6 +16,7 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 DISCORD_API_BASE = "https://discord.com/api/v10"
+DISCORD_CONTENT_MAX_LENGTH = 2000
 
 dynamodb = boto3.resource("dynamodb")
 s3 = boto3.client("s3")
@@ -28,20 +29,71 @@ generate_feed_function = os.environ.get("GENERATE_FEED_FUNCTION_NAME", "")
 state_machine_arn = os.environ.get("STATE_MACHINE_ARN", "")
 
 
-def send_followup(application_id, token, content):
-    """Edit the deferred Discord interaction response with the final result.
+def split_into_chunks(content, limit, separator="\n\n"):
+    """Split content into chunks within `limit` chars, splitting only between
+    entries (separated by `separator`) so that a single entry - e.g. a
+    title+URL pair - is never broken across chunks.
 
-    application_id/token are absent when invoked directly (e.g. console
-    testing), in which case there is no Discord interaction to update.
+    An individual entry longer than `limit` is split at its internal line
+    breaks instead, and only hard-split mid-line as an absolute last resort.
     """
-    if not application_id or not token:
-        return
+    entries = content.split(separator)
+    chunks = []
+    current = ""
+    for entry in entries:
+        candidate = f"{current}{separator}{entry}" if current else entry
+        if len(candidate) <= limit:
+            current = candidate
+            continue
 
-    url = f"{DISCORD_API_BASE}/webhooks/{application_id}/{token}/messages/@original"
+        if current:
+            chunks.append(current)
+            current = ""
+
+        if len(entry) <= limit:
+            current = entry
+        else:
+            chunks.extend(_split_lines(entry, limit))
+
+    if current:
+        chunks.append(current)
+
+    return chunks or [""]
+
+
+def _split_lines(text, limit):
+    """Fallback for a single oversized entry: split at line breaks, hard
+    splitting an individual line only if it alone exceeds `limit`."""
+    lines = text.split("\n")
+    chunks = []
+    current = ""
+    for line in lines:
+        candidate = f"{current}\n{line}" if current else line
+        if len(candidate) <= limit:
+            current = candidate
+            continue
+
+        if current:
+            chunks.append(current)
+            current = ""
+
+        if len(line) <= limit:
+            current = line
+        else:
+            for i in range(0, len(line), limit):
+                chunks.append(line[i : i + limit])
+
+    if current:
+        chunks.append(current)
+
+    return chunks
+
+
+def discord_request(method, url, payload):
     req = Request(
         url,
-        data=json.dumps({"content": content}).encode(),
-        method="PATCH",
+        data=json.dumps(payload).encode(),
+        method=method,
         headers={
             "Content-Type": "application/json",
             # Discord's edge (Cloudflare) blocks requests carrying urllib's
@@ -52,8 +104,34 @@ def send_followup(application_id, token, content):
     )
     try:
         urlopen(req, timeout=10)
+    except HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")
+        logger.error("Discord rejected %s %s: status=%s body=%s", method, url, e.code, body)
     except URLError:
-        logger.exception("Failed to send Discord followup message")
+        logger.exception("Failed to call Discord API: %s %s", method, url)
+
+
+def send_followup(application_id, token, content):
+    """Deliver the deferred Discord interaction result as one or more messages.
+
+    application_id/token are absent when invoked directly (e.g. console
+    testing), in which case there is no Discord interaction to update.
+
+    Discord rejects message content over 2000 characters, and lists like
+    /feeds and /list grow with the number of registered sites, so the
+    content is split across multiple messages rather than truncated: the
+    first chunk edits the deferred response, the rest are sent as
+    additional followup messages.
+    """
+    if not application_id or not token:
+        return
+
+    webhook_base = f"{DISCORD_API_BASE}/webhooks/{application_id}/{token}"
+    chunks = split_into_chunks(content, DISCORD_CONTENT_MAX_LENGTH)
+
+    discord_request("PATCH", f"{webhook_base}/messages/@original", {"content": chunks[0]})
+    for chunk in chunks[1:]:
+        discord_request("POST", webhook_base, {"content": chunk})
 
 
 def lambda_handler(event, context):
@@ -180,7 +258,7 @@ def handle_list(options):
     for item in sorted(items, key=lambda x: x.get("created_at", "")):
         lines.append(f"- `{item['site_id']}` **{item['name']}**\n  {item['url']}")
 
-    return {"content": "\n".join(lines)}
+    return {"content": "\n\n".join(lines)}
 
 
 def handle_delete(options):
@@ -243,4 +321,4 @@ def handle_feeds(options):
         feed_url = f"https://{distribution_domain}/{item['feed_path']}"
         lines.append(f"- **{item['name']}**\n  {feed_url}")
 
-    return {"content": "\n".join(lines)}
+    return {"content": "\n\n".join(lines)}
