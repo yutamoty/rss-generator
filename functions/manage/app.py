@@ -1,13 +1,21 @@
 import ipaddress
 import json
+import logging
 import os
 import re
 import socket
 from datetime import datetime, timezone
+from urllib.error import URLError
 from urllib.parse import urlparse
+from urllib.request import Request, urlopen
 
 import boto3
 from ulid import ULID
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+DISCORD_API_BASE = "https://discord.com/api/v10"
 
 dynamodb = boto3.resource("dynamodb")
 s3 = boto3.client("s3")
@@ -20,9 +28,33 @@ generate_feed_function = os.environ.get("GENERATE_FEED_FUNCTION_NAME", "")
 state_machine_arn = os.environ.get("STATE_MACHINE_ARN", "")
 
 
+def send_followup(application_id, token, content):
+    """Edit the deferred Discord interaction response with the final result.
+
+    application_id/token are absent when invoked directly (e.g. console
+    testing), in which case there is no Discord interaction to update.
+    """
+    if not application_id or not token:
+        return
+
+    url = f"{DISCORD_API_BASE}/webhooks/{application_id}/{token}/messages/@original"
+    req = Request(
+        url,
+        data=json.dumps({"content": content}).encode(),
+        method="PATCH",
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        urlopen(req, timeout=10)
+    except URLError:
+        logger.exception("Failed to send Discord followup message")
+
+
 def lambda_handler(event, context):
     command = event.get("command")
     options = event.get("options", {})
+    application_id = event.get("application_id")
+    token = event.get("token")
 
     handlers = {
         "add": handle_add,
@@ -34,9 +66,20 @@ def lambda_handler(event, context):
 
     handler = handlers.get(command)
     if not handler:
-        return {"content": f"Unknown command: {command}"}
+        result = {"content": f"Unknown command: {command}"}
+    else:
+        try:
+            result = handler(options)
+        except Exception:
+            # This function is invoked asynchronously (Event) by discord-handler.
+            # An unhandled exception would make Lambda auto-retry the invocation,
+            # which could duplicate side effects (e.g. adding the same site
+            # twice), so failures are contained and reported to Discord instead.
+            logger.exception("Unhandled error in command handler: %s", command)
+            result = {"content": "An error occurred while processing the command."}
 
-    return handler(options)
+    send_followup(application_id, token, result.get("content", "An error occurred."))
+    return result
 
 
 def is_public_hostname(hostname):

@@ -59,19 +59,26 @@ def lambda_handler(event, context):
         raw_options = data.get("options", [])
         options = {opt["name"]: opt["value"] for opt in raw_options}
 
-        payload = {"command": command_name, "options": options}
-        response = lambda_client.invoke(
+        # Discord requires an ACK within 3 seconds. The actual work (DynamoDB,
+        # S3, downstream Lambda invokes) is done asynchronously by `manage`,
+        # which edits this deferred response via the interaction webhook once
+        # it has a result.
+        payload = {
+            "command": command_name,
+            "options": options,
+            "application_id": body.get("application_id"),
+            "token": body.get("token"),
+        }
+        lambda_client.invoke(
             FunctionName=MANAGE_FUNCTION_NAME,
-            InvocationType="RequestResponse",
+            InvocationType="Event",
             Payload=json.dumps(payload),
         )
-        result = json.loads(response["Payload"].read())
-        content = result.get("content", "An error occurred.")
 
         return {
             "statusCode": 200,
             "headers": {"Content-Type": "application/json"},
-            "body": json.dumps({"type": 4, "data": {"content": content}}),
+            "body": json.dumps({"type": 5}),
         }
 
     return {
