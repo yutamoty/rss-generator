@@ -5,7 +5,7 @@ import os
 import re
 import socket
 from datetime import datetime, timezone
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
@@ -16,6 +16,7 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 DISCORD_API_BASE = "https://discord.com/api/v10"
+DISCORD_CONTENT_MAX_LENGTH = 2000
 
 dynamodb = boto3.resource("dynamodb")
 s3 = boto3.client("s3")
@@ -37,6 +38,12 @@ def send_followup(application_id, token, content):
     if not application_id or not token:
         return
 
+    # Discord rejects message content over 2000 characters with HTTP 400.
+    # Lists like /feeds and /list grow with the number of registered sites,
+    # so truncate defensively rather than silently failing to notify.
+    if len(content) > DISCORD_CONTENT_MAX_LENGTH:
+        content = content[: DISCORD_CONTENT_MAX_LENGTH - 1] + "…"
+
     url = f"{DISCORD_API_BASE}/webhooks/{application_id}/{token}/messages/@original"
     req = Request(
         url,
@@ -52,6 +59,9 @@ def send_followup(application_id, token, content):
     )
     try:
         urlopen(req, timeout=10)
+    except HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")
+        logger.error("Discord rejected followup message: status=%s body=%s", e.code, body)
     except URLError:
         logger.exception("Failed to send Discord followup message")
 
