@@ -29,12 +29,42 @@ generate_feed_function = os.environ.get("GENERATE_FEED_FUNCTION_NAME", "")
 state_machine_arn = os.environ.get("STATE_MACHINE_ARN", "")
 
 
-def split_into_chunks(content, limit):
-    """Split content into chunks at line breaks, each within `limit` chars.
+def split_into_chunks(content, limit, separator="\n\n"):
+    """Split content into chunks within `limit` chars, splitting only between
+    entries (separated by `separator`) so that a single entry - e.g. a
+    title+URL pair - is never broken across chunks.
 
-    A single line longer than `limit` is hard-split as a last resort.
+    An individual entry longer than `limit` is split at its internal line
+    breaks instead, and only hard-split mid-line as an absolute last resort.
     """
-    lines = content.split("\n")
+    entries = content.split(separator)
+    chunks = []
+    current = ""
+    for entry in entries:
+        candidate = f"{current}{separator}{entry}" if current else entry
+        if len(candidate) <= limit:
+            current = candidate
+            continue
+
+        if current:
+            chunks.append(current)
+            current = ""
+
+        if len(entry) <= limit:
+            current = entry
+        else:
+            chunks.extend(_split_lines(entry, limit))
+
+    if current:
+        chunks.append(current)
+
+    return chunks or [""]
+
+
+def _split_lines(text, limit):
+    """Fallback for a single oversized entry: split at line breaks, hard
+    splitting an individual line only if it alone exceeds `limit`."""
+    lines = text.split("\n")
     chunks = []
     current = ""
     for line in lines:
@@ -56,7 +86,7 @@ def split_into_chunks(content, limit):
     if current:
         chunks.append(current)
 
-    return chunks or [""]
+    return chunks
 
 
 def discord_request(method, url, payload):
@@ -228,7 +258,7 @@ def handle_list(options):
     for item in sorted(items, key=lambda x: x.get("created_at", "")):
         lines.append(f"- `{item['site_id']}` **{item['name']}**\n  {item['url']}")
 
-    return {"content": "\n".join(lines)}
+    return {"content": "\n\n".join(lines)}
 
 
 def handle_delete(options):
@@ -291,4 +321,4 @@ def handle_feeds(options):
         feed_url = f"https://{distribution_domain}/{item['feed_path']}"
         lines.append(f"- **{item['name']}**\n  {feed_url}")
 
-    return {"content": "\n".join(lines)}
+    return {"content": "\n\n".join(lines)}
