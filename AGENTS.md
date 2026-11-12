@@ -37,7 +37,7 @@ RSSフィードを提供していないWebサイトをスクレイピングし�
 
 ```
 .
-├── CLAUDE.md
+├── AGENTS.md
 ├── README.md
 ├── template.yaml              # SAM テンプレート
 ├── samconfig.toml              # SAM デプロイ設定
