@@ -313,7 +313,7 @@ SSM の値を更新しただけでは CloudFormation スタックには反映さ
 
 ```
 .
-├── CLAUDE.md
+├── AGENTS.md
 ├── README.md
 ├── template.yaml               # SAM テンプレート
 ├── samconfig.toml               # SAM デプロイ設定
